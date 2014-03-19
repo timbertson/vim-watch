@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type='text/xsl' href='interface.xsl'?>
+<interface xmlns="http://zero-install.sourceforge.net/2004/injector/interface" xmlns:compile="http://zero-install.sourceforge.net/2006/namespaces/0compile" xmlns:release="http://zero-install.sourceforge.net/2007/namespaces/0release">
+	<name>vim-watch</name>
+	<summary>vim stratifiedjs syntax support</summary>
+	<publish xmlns="http://gfxmonk.net/dist/0install" mode="third-party"/>
+	<description>
+	</description>
+	<homepage>http://gfxmonk.github.com/vim-watch/</homepage>
+	<feed-for interface="http://gfxmonk.net/dist/0install/vim-watch.xml"/>
+	<group>
+		<environment insert="" mode="prepend" name="VIMPATH"/>
+		<command name="run" path="bin/vim-watch">
+			<runner interface="http://repo.roscidus.com/python/python"/>
+		</command>
+		<implementation version="{version}">
+			<manifest-digest/>
+			<archive href="{archive}"/>
+		</implementation>
+	</group>
+</interface>

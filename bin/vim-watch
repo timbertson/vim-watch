@@ -1,0 +1,105 @@
+#!/usr/bin/env python
+from __future__ import print_function
+import time
+import fcntl
+import os
+import signal
+import subprocess
+import sys
+import logging
+
+path = os.environ['XDG_RUNTIME_DIR'] + '/vim-watch'
+
+DIRTY = True
+def run(cmd):
+	global DIRTY
+	assert len(cmd) > 0
+
+	if not os.path.exists(path):
+		logging.debug("Making: %s", path)
+		os.makedirs(path)
+
+	fd = os.open(path, os.O_RDONLY)
+
+	def get_mtime():
+		try:
+			return os.stat(os.path.join(path, 'save')).st_mtime
+		except IOError:
+			return 0
+	
+	def handler(signum, frame):
+		global DIRTY
+		DIRTY = True
+		logging.debug("handler called")
+		fcntl.fcntl(fd, fcntl.F_NOTIFY, fcntl.DN_MODIFY)
+
+	signal.signal(signal.SIGIO, handler)
+	fcntl.fcntl(fd, fcntl.F_SETSIG, 0)
+	handler(None, None)
+
+	while True:
+		if DIRTY:
+			DIRTY = False
+			mtime = get_mtime()
+			logging.debug("current mtime: %s", mtime)
+			while True:
+				last_mtime = mtime
+				# print("File %s modified: %s" % (frame,mtime))
+				subprocess.Popen(cmd).wait()
+
+				mtime = get_mtime()
+				logging.debug("current mtime: %s", mtime)
+				if mtime == last_mtime: break
+		else:
+			logging.debug("Sleeping")
+			time.sleep(10000)
+			logging.debug("awoke, dirty=%s", DIRTY)
+
+def vimCall(opts, cmd):
+	if opts.no_remote:
+		return
+	servers = opts.remote
+	if not servers:
+		servers = subprocess.check_output(['vim', '--serverlist']).decode('utf-8').strip().splitlines()
+	failed = 0
+	for server in servers:
+		proc = subprocess.Popen(['vim', '--servername', server, '--remote-send', '<esc>:%s<cr>' % cmd])
+		if proc.wait() != 0:
+			failed += 1
+			logging.error("Failed to enable `vim-watch` plugin in vim server: %s", server)
+
+	logging.info("invoked %s on %d running vim instances" % (cmd, len(servers) - failed))
+
+
+def main():
+	enabled = False
+	try:
+		from optparse import OptionParser
+		p = OptionParser('Usage: %prog [options] command [ args ... ]')
+		p.disable_interspersed_args()
+		p.add_option('--no-remote', action='store_true', help='disable automatic enabling / disabling of VIM plugin')
+		p.add_option('--remote', action='append', default=[], help='target a specific VIM server')
+		p.add_option('--verbose', action='store_true', help='verbose')
+		opts, args = p.parse_args()
+		assert len(args) > 0
+
+		fmt = '[ watch ] %(message)s'
+		lvl = logging.INFO
+		if opts.verbose:
+			lvl = logging.DEBUG
+		logging.basicConfig(format=fmt, level=lvl)
+
+		vimCall(opts, "WatchNotify")
+		enabled = True
+		run(args)
+	except AssertionError:
+		p.print_help()
+		sys.exit(2)
+	except KeyboardInterrupt:
+		print()
+		sys.exit(2)
+	finally:
+		if enabled:
+			vimCall(opts, "WatchNotifyOff")
+
+main()
