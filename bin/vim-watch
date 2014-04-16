@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import logging
+import errno
 
 path = os.environ['XDG_RUNTIME_DIR'] + '/vim-watch'
 
@@ -15,16 +16,20 @@ def run(cmd):
 	global DIRTY
 	assert len(cmd) > 0
 
-	if not os.path.exists(path):
-		logging.debug("Making: %s", path)
+	try:
 		os.makedirs(path)
+	except OSError as e:
+		if e.errno != errno.EEXIST:
+			raise
+	else:
+		logging.debug("Created: %s", path)
 
 	fd = os.open(path, os.O_RDONLY)
 
 	def get_mtime():
 		try:
 			return os.stat(os.path.join(path, 'save')).st_mtime
-		except IOError:
+		except OSError:
 			return 0
 	
 	def handler(signum, frame):
