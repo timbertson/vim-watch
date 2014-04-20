@@ -10,6 +10,7 @@
 	<feed-for interface="http://gfxmonk.net/dist/0install/vim-watch.xml"/>
 	<group>
 		<environment insert="" mode="prepend" name="VIMPATH"/>
+		<requires importance="recommended" interface="http://gfxmonk.net/dist/0install/huppy.xml"/>
 		<command name="run" path="bin/vim-watch">
 			<runner interface="http://repo.roscidus.com/python/python"/>
 		</command>

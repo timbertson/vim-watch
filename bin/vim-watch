@@ -11,10 +11,9 @@ import errno
 
 path = os.environ['XDG_RUNTIME_DIR'] + '/vim-watch'
 
-DIRTY = True
-def run(cmd):
+DIRTY = None
+def run(trigger, initially_dirty):
 	global DIRTY
-	assert len(cmd) > 0
 
 	try:
 		os.makedirs(path)
@@ -41,6 +40,7 @@ def run(cmd):
 	signal.signal(signal.SIGIO, handler)
 	fcntl.fcntl(fd, fcntl.F_SETSIG, 0)
 	handler(None, None)
+	DIRTY = initially_dirty
 
 	while True:
 		if DIRTY:
@@ -50,7 +50,7 @@ def run(cmd):
 			while True:
 				last_mtime = mtime
 				# print("File %s modified: %s" % (frame,mtime))
-				subprocess.Popen(cmd).wait()
+				trigger()
 
 				mtime = get_mtime()
 				logging.debug("current mtime: %s", mtime)
@@ -82,9 +82,10 @@ def main():
 		from optparse import OptionParser
 		p = OptionParser('Usage: %prog [options] command [ args ... ]')
 		p.disable_interspersed_args()
-		p.add_option('--no-remote', action='store_true', help='disable automatic enabling / disabling of VIM plugin')
-		p.add_option('--remote', action='append', default=[], help='target a specific VIM server')
-		p.add_option('--verbose', action='store_true', help='verbose')
+		p.add_option('--no-remote',    '-n', action='store_true', help='disable automatic enabling / disabling of VIM plugin')
+		p.add_option('--remote',       '-r', action='append', default=[], help='target a specific VIM server')
+		p.add_option('--huppy',              action='store_true', help='use `huppy` to run / restart a long-running process (http://gfxmonk.net/dist/0install/huppy.xml)')
+		p.add_option('--verbose',      '-v', action='store_true', help='verbose')
 		opts, args = p.parse_args()
 		assert len(args) > 0
 
@@ -94,17 +95,65 @@ def main():
 			lvl = logging.DEBUG
 		logging.basicConfig(format=fmt, level=lvl)
 
+		huppy = None
+		assert len(args) > 0, "You must provide a command"
+
+		if opts.huppy:
+			# run a long-running huppy process
+			logging.info("starting huppy ...")
+			huppy = subprocess.Popen([os.environ.get('HUPPY','huppy')] + args)
+			def check():
+				if huppy.poll() is not None:
+					raise RuntimeError("`huppy` process died")
+			check()
+
+			def trigger():
+				check()
+				logging.debug("sending SIGHUP")
+				os.kill(huppy.pid, signal.SIGHUP)
+				check()
+		else:
+			def trigger():
+				returncode = subprocess.Popen(args).wait()
+				if returncode != 0:
+					logging.warn("Command failed with status %d", returncode)
+
+
 		vimCall(opts, "WatchNotify")
 		enabled = True
-		run(args)
+		run(trigger, initially_dirty=not opts.huppy)
 	except AssertionError:
 		p.print_help()
 		sys.exit(2)
+	except RuntimeError as e:
+		print('Error: %s' % (e,), file=sys.stderr)
+		sys.exit(1)
 	except KeyboardInterrupt:
 		print()
 		sys.exit(2)
 	finally:
-		if enabled:
-			vimCall(opts, "WatchNotifyOff")
+		def cleanup_vim():
+			if enabled:
+				vimCall(opts, "WatchNotifyOff")
+		def cleanup_huppy():
+			if huppy:
+				os.kill(huppy.pid, signal.SIGTERM)
+				try:
+					logging.info("stopping huppy ... ")
+					huppy.wait()
+				except KeyboardInterrupt:
+					huppy.kill()
+					huppy.wait()
+
+		failed = False
+		for cleanup in [cleanup_vim, cleanup_huppy]:
+			try:
+				cleanup()
+			except Exception as e:
+				logging.debug(str(e), exc_info = True)
+				logging.error('Error: %s' % (e,), exc_info = True)
+				failed = True
+		if failed:
+			sys.exit(1)
 
 main()
