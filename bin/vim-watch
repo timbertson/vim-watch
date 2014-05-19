@@ -117,6 +117,8 @@ def main():
 				returncode = subprocess.Popen(args).wait()
 				if returncode != 0:
 					logging.warn("Command failed with status %d", returncode)
+				else:
+					logging.info('--')
 
 
 		vimCall(opts, "WatchNotify")
