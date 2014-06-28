@@ -75,16 +75,24 @@ def vimCall(opts, cmd):
 
 	logging.info("invoked %s on %d running vim instances" % (cmd, len(servers) - failed))
 
+class Ref(object):
+	def __init__(self, r):
+		self.set(r)
+	
+	def set(self, r):
+		self.value = r
+
 
 def main():
 	enabled = False
+	huppy = Ref(None)
 	try:
 		from optparse import OptionParser
 		p = OptionParser('Usage: %prog [options] command [ args ... ]')
 		p.disable_interspersed_args()
 		p.add_option('--no-remote',    '-n', action='store_true', help='disable automatic enabling / disabling of VIM plugin')
 		p.add_option('--remote',       '-r', action='append', default=[], help='target a specific VIM server')
-		p.add_option('--huppy',              action='store_true', help='use `huppy` to run / restart a long-running process (http://gfxmonk.net/dist/0install/huppy.xml)')
+		p.add_option('--huppy',        '-s', action='store_true', help='use `huppy` to run / restart a long-running process (mnemonic: [s]erver) (http://gfxmonk.net/dist/0install/huppy.xml)')
 		p.add_option('--verbose',      '-v', action='store_true', help='verbose')
 		opts, args = p.parse_args()
 		assert len(args) > 0
@@ -95,22 +103,30 @@ def main():
 			lvl = logging.DEBUG
 		logging.basicConfig(format=fmt, level=lvl)
 
-		huppy = None
 		assert len(args) > 0, "You must provide a command"
 
 		if opts.huppy:
+			def start_huppy():
+				assert huppy.value is None
+				huppy.set(subprocess.Popen([os.environ.get('HUPPY','huppy')] + args))
 			# run a long-running huppy process
 			logging.info("starting huppy ...")
-			huppy = subprocess.Popen([os.environ.get('HUPPY','huppy')] + args)
+			start_huppy()
 			def check():
-				if huppy.poll() is not None:
-					raise RuntimeError("`huppy` process died")
+				if huppy.value.poll() is not None:
+					if huppy.value.returncode == 0:
+						logging.warn("`huppy` process exited - restarting")
+						huppy.set(None)
+						start_huppy()
+					raise RuntimeError("`huppy` process died with exit status %d" % (huppy.value.returncode,))
 			check()
 
 			def trigger():
 				check()
 				logging.debug("sending SIGHUP")
-				os.kill(huppy.pid, signal.SIGHUP)
+				try:
+					os.kill(huppy.value.pid, signal.SIGHUP)
+				except OSError: pass
 				check()
 		else:
 			def trigger():
@@ -138,14 +154,14 @@ def main():
 			if enabled:
 				vimCall(opts, "WatchNotifyOff")
 		def cleanup_huppy():
-			if huppy:
-				os.kill(huppy.pid, signal.SIGTERM)
+			if huppy.value:
+				os.kill(huppy.value.pid, signal.SIGTERM)
 				try:
 					logging.info("stopping huppy ... ")
-					huppy.wait()
+					huppy.value.wait()
 				except KeyboardInterrupt:
-					huppy.kill()
-					huppy.wait()
+					huppy.value.kill()
+					huppy.value.wait()
 
 		failed = False
 		for cleanup in [cleanup_vim, cleanup_huppy]:
