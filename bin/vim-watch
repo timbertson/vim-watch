@@ -35,7 +35,7 @@ def run(trigger, initially_dirty):
 		global DIRTY
 		DIRTY = True
 		logging.debug("handler called")
-		fcntl.fcntl(fd, fcntl.F_NOTIFY, fcntl.DN_MODIFY)
+		fcntl.fcntl(fd, fcntl.F_NOTIFY, fcntl.DN_MODIFY | fcntl.DN_CREATE)
 
 	signal.signal(signal.SIGIO, handler)
 	fcntl.fcntl(fd, fcntl.F_SETSIG, 0)
