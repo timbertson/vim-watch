@@ -114,19 +114,19 @@ def main():
 			start_huppy()
 			def check():
 				if huppy.value.poll() is not None:
-					if huppy.value.returncode == 0:
-						logging.warn("`huppy` process exited - restarting")
-						huppy.set(None)
-						start_huppy()
-					raise RuntimeError("`huppy` process died with exit status %d" % (huppy.value.returncode,))
+					logging.error("`huppy` process exited - restarting")
+					huppy.set(None)
+					start_huppy()
+					return False
+				return True
 			check()
 
 			def trigger():
-				check()
-				logging.debug("sending SIGHUP")
-				try:
-					os.kill(huppy.value.pid, signal.SIGHUP)
-				except OSError: pass
+				if check():
+					logging.debug("sending SIGHUP")
+					try:
+						os.kill(huppy.value.pid, signal.SIGHUP)
+					except OSError: pass
 				check()
 		else:
 			def trigger():
