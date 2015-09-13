@@ -12,7 +12,15 @@ import errno
 path = os.environ['XDG_RUNTIME_DIR'] + '/vim-watch'
 
 DIRTY = None
-def run(trigger, initially_dirty):
+
+def print_header():
+	sep="-"*20
+	print('\n'*10)
+	logging.info("%s %s %s" % (sep, time.strftime('%T'), sep))
+
+def noop(): pass
+
+def run(trigger, initially_dirty, clear):
 	global DIRTY
 
 	try:
@@ -41,6 +49,7 @@ def run(trigger, initially_dirty):
 	fcntl.fcntl(fd, fcntl.F_SETSIG, 0)
 	handler(None, None)
 	DIRTY = initially_dirty
+	log_new_run = noop
 
 	while True:
 		if DIRTY:
@@ -50,6 +59,9 @@ def run(trigger, initially_dirty):
 			while True:
 				last_mtime = mtime
 				# print("File %s modified: %s" % (frame,mtime))
+				if clear:
+					log_new_run()
+					log_new_run = print_header
 				trigger()
 
 				mtime = get_mtime()
@@ -92,6 +104,7 @@ def main():
 		p.disable_interspersed_args()
 		p.add_option('--no-remote',    '-n', action='store_true', help='disable automatic enabling / disabling of VIM plugin')
 		p.add_option('--remote',       '-r', action='append', default=[], help='target a specific VIM server')
+		p.add_option('--clear',        '-c', action='store_true', help='insert a large gap between invocations')
 		p.add_option('--huppy',        '-s', action='store_true', help='use `huppy` to run / restart a long-running process (mnemonic: [s]erver) (http://gfxmonk.net/dist/0install/huppy.xml)')
 		p.add_option('--verbose',      '-v', action='store_true', help='verbose')
 		opts, args = p.parse_args()
@@ -134,12 +147,12 @@ def main():
 				if returncode != 0:
 					logging.warn("Command failed with status %d", returncode)
 				else:
-					logging.info('--')
+					logging.info('-- waiting --')
 
 
 		vimCall(opts, "WatchNotify")
 		enabled = True
-		run(trigger, initially_dirty=not opts.huppy)
+		run(trigger, initially_dirty=not opts.huppy, clear=opts.clear)
 	except AssertionError:
 		p.print_help()
 		sys.exit(2)
