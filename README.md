@@ -1,3 +1,5 @@
+<img src="http://gfxmonk.net/dist/status/project/vim-watch.png">
+
 # vim-watch
 
 ..is a simple linux-only tool that enables quick feedback during development, by automatically re-running a command whenever you save a file (with vim).
