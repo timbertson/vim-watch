@@ -8,10 +8,11 @@ import subprocess
 import sys
 import logging
 import errno
+import threading
 
 path = os.environ['XDG_RUNTIME_DIR'] + '/vim-watch'
 
-DIRTY = None
+DIRTY = threading.Event()
 
 def print_header():
 	sep="-"*20
@@ -21,8 +22,6 @@ def print_header():
 def noop(): pass
 
 def run(trigger, initially_dirty, clear):
-	global DIRTY
-
 	try:
 		os.makedirs(path)
 	except OSError as e:
@@ -40,40 +39,36 @@ def run(trigger, initially_dirty, clear):
 			return 0
 	
 	def handler(signum, frame):
-		global DIRTY
-		DIRTY = True
 		logging.debug("handler called")
+		DIRTY.set()
 		fcntl.fcntl(fd, fcntl.F_NOTIFY, fcntl.DN_MODIFY | fcntl.DN_CREATE)
 
 	signal.signal(signal.SIGIO, handler)
 	fcntl.fcntl(fd, fcntl.F_SETSIG, 0)
 	handler(None, None)
-	DIRTY = initially_dirty
+	if initially_dirty:
+		DIRTY.set()
 	log_new_run = noop
 
 	while True:
-		if DIRTY:
-			DIRTY = False
+		DIRTY.wait()
+		mtime = get_mtime()
+		logging.debug("current mtime: %s", mtime)
+		while True:
+			last_mtime = mtime
+			# print("File %s modified: %s" % (frame,mtime))
+			if clear:
+				log_new_run()
+				log_new_run = print_header
+			DIRTY.clear()
+			trigger()
+
 			mtime = get_mtime()
 			logging.debug("current mtime: %s", mtime)
-			while True:
-				last_mtime = mtime
-				# print("File %s modified: %s" % (frame,mtime))
-				if clear:
-					log_new_run()
-					log_new_run = print_header
-				trigger()
-
-				mtime = get_mtime()
-				logging.debug("current mtime: %s", mtime)
-				if mtime == last_mtime: break
-		else:
-			logging.debug("Sleeping")
-			time.sleep(10000)
-			logging.debug("awoke, dirty=%s", DIRTY)
+			if mtime == last_mtime: break
 
 def remote_expr(exe, server, cmd):
-	return subprocess.Popen(['vim', '--servername', server, '--remote-expr', cmd])
+	return subprocess.Popen([exe, '--servername', server, '--remote-expr', cmd])
 
 class VimServer(object):
 	def __init__(self, name):
@@ -125,7 +120,7 @@ def vimCall(opts, cmd):
 	if opts.no_remote:
 		return
 
-	servers = list(map(opts.ServerClass(opts.remote)))
+	servers = list(map(opts.ServerClass, opts.remote))
 	if not servers:
 		servers = opts.ServerClass.list()
 

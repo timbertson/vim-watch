@@ -1,5 +1,9 @@
 { pkgs ? import <nixpkgs> {}, enableNeovim ? false, sourceOverrides ? {} }:
 with pkgs;
+let
+	pythonPackages = pkgs.python3Packages;
+	python = pythonPackages.python;
+in
 stdenv.mkDerivation {
 	name = "vim-watch";
 	src = sourceOverrides.vim-watch or (fetchgit {
@@ -7,7 +11,7 @@ stdenv.mkDerivation {
 		rev = "382aea1469dc832154e7c1aaf7c43923c1973155";
 		sha256 = "1hxv6a14wsjbn0nncgy3nl7kw428zy3l11j415y8nmvkr73y55jn";
 	});
-	buildInputs = [ python ] ++ (if enableNeovim then [ makeWrapper ] else []);
+	buildInputs = [ python ] ++ (if enableNeovim then [ makeWrapper neovim-remote pythonPackages.psutil ] else []);
 	installPhase = ''
 		mkdir -p $out/share/vim;
 		cp -a ./* $out/share/vim
@@ -15,7 +19,8 @@ stdenv.mkDerivation {
 	'' + (if enableNeovim
 		then ''
 			wrapProgram $out/bin/vim-watch \
-				--prefix : PATH ${neovim-remote}/bin \
+				--prefix PATH : ${neovim-remote}/bin \
+				--prefix PYTHONPATH : ${pythonPackages.psutil}/${python.sitePackages} \
 				;
 		''
 		else ""
