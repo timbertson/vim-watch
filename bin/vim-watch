@@ -68,7 +68,11 @@ def run(trigger, initially_dirty, clear):
 			if mtime == last_mtime: break
 
 def remote_expr(exe, server, cmd):
-	return subprocess.Popen([exe, '--servername', server, '--remote-expr', cmd])
+	with open(os.devnull, 'w') as devnull:
+		return subprocess.Popen([exe, '--servername', server, '--remote-expr', cmd], stdout=devnull)
+
+def server_list(exe):
+		return subprocess.check_output([exe, '--serverlist']).decode('utf-8').strip().splitlines()
 
 class VimServer(object):
 	def __init__(self, name):
@@ -82,8 +86,7 @@ class VimServer(object):
 
 	@classmethod
 	def list(cls):
-		servernames = subprocess.check_output(['vim', '--serverlist']).decode('utf-8').strip().splitlines()
-		return list(map(cls, servernames))
+		return list(map(cls, server_list('vim')))
 
 class NeovimServer(object):
 	def __init__(self, path):
@@ -104,17 +107,7 @@ class NeovimServer(object):
 			pass
 		else:
 			return [NeovimServer(addr)]
-
-		import psutil
-		euid = os.geteuid()
-		result = []
-		for proc in psutil.process_iter():
-			if proc.uids().effective != euid: continue
-			if 'nvim' not in proc.name(): continue
-			connections = proc.connections(kind='unix')
-			for connection in connections:
-				result.append(cls(connection.laddr))
-		return result
+		return list(map(cls, server_list('nvr')))
 
 def vimCall(opts, cmd):
 	if opts.no_remote:
@@ -152,7 +145,7 @@ def main():
 		p.add_option('--clear',        '-c', action='store_true', help='insert a large gap between invocations')
 		p.add_option('--huppy',        '-s', action='store_true', help='use `huppy` to run / restart a long-running process (mnemonic: [s]erver) (http://gfxmonk.net/dist/0install/huppy.xml)')
 		p.add_option('--verbose',      '-v', action='store_true', help='verbose')
-		p.add_option('--neovim'            , action='store_true', help='attach to nvim instead of vim (requires nvim-remote)')
+		p.add_option('--neovim'            , action='store_true', help='attach to nvim instead of vim (requires nvim-remote, default when $NVIM_LISTEN_ADDRESS is set)', default=('NVIM_LISTEN_ADDRESS' in os.environ))
 		opts, args = p.parse_args()
 		assert len(args) > 0
 

@@ -11,7 +11,7 @@ stdenv.mkDerivation {
 		rev = "382aea1469dc832154e7c1aaf7c43923c1973155";
 		sha256 = "1hxv6a14wsjbn0nncgy3nl7kw428zy3l11j415y8nmvkr73y55jn";
 	});
-	buildInputs = [ python ] ++ (if enableNeovim then [ makeWrapper neovim-remote pythonPackages.psutil ] else []);
+	buildInputs = [ python ] ++ (if enableNeovim then [ makeWrapper neovim-remote ] else []);
 	installPhase = ''
 		mkdir -p $out/share/vim;
 		cp -a ./* $out/share/vim
@@ -20,7 +20,6 @@ stdenv.mkDerivation {
 		then ''
 			wrapProgram $out/bin/vim-watch \
 				--prefix PATH : ${neovim-remote}/bin \
-				--prefix PYTHONPATH : ${pythonPackages.psutil}/${python.sitePackages} \
 				;
 		''
 		else ""
