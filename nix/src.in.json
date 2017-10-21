@@ -1,0 +1,6 @@
+{
+	"owner": "timbertson",
+	"repo": "vim-watch",
+	"rev": "version-{version}",
+	"type": "fetchFromGitHub"
+}
