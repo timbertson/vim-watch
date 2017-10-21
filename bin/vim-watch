@@ -72,15 +72,66 @@ def run(trigger, initially_dirty, clear):
 			time.sleep(10000)
 			logging.debug("awoke, dirty=%s", DIRTY)
 
+def remote_expr(exe, server, cmd):
+	return subprocess.Popen(['vim', '--servername', server, '--remote-expr', cmd])
+
+class VimServer(object):
+	def __init__(self, name):
+		self.name = name
+
+	def __repr__(self):
+		return '<Vim remote %r>' % (self.name,)
+
+	def remote_expr(self, cmd):
+		return remote_expr('vim', self.name, cmd)
+
+	@classmethod
+	def list(cls):
+		servernames = subprocess.check_output(['vim', '--serverlist']).decode('utf-8').strip().splitlines()
+		return list(map(cls, servernames))
+
+class NeovimServer(object):
+	def __init__(self, path):
+		self.path = path
+
+	def __repr__(self):
+		return '<NeovimServer at %r>' % (self.path,)
+
+	def remote_expr(self, cmd):
+		return remote_expr('nvr', self.path, cmd)
+
+	@classmethod
+	def list(cls):
+		# shortcut: $NVIM_LISTEN_ADDRESS will be set within a :terminal
+		try:
+			addr = os.environ['NVIM_LISTEN_ADDRESS']
+		except KeyError:
+			pass
+		else:
+			return [NeovimServer(addr)]
+
+		import psutil
+		euid = os.geteuid()
+		result = []
+		for proc in psutil.process_iter():
+			if proc.uids().effective != euid: continue
+			if 'nvim' not in proc.name(): continue
+			connections = proc.connections(kind='unix')
+			for connection in connections:
+				result.append(cls(connection.laddr))
+		return result
+
 def vimCall(opts, cmd):
 	if opts.no_remote:
 		return
-	servers = opts.remote
+
+	servers = list(map(opts.ServerClass(opts.remote)))
 	if not servers:
-		servers = subprocess.check_output(['vim', '--serverlist']).decode('utf-8').strip().splitlines()
+		servers = opts.ServerClass.list()
+
 	failed = 0
 	for server in servers:
-		proc = subprocess.Popen(['vim', '--servername', server, '--remote-send', '<esc>:%s<cr>' % cmd])
+		proc = server.remote_expr(cmd)
 		if proc.wait() != 0:
 			failed += 1
 			logging.error("Failed to enable `vim-watch` plugin in vim server: %s", server)
@@ -94,7 +145,6 @@ class Ref(object):
 	def set(self, r):
 		self.value = r
 
-
 def main():
 	enabled = False
 	huppy = Ref(None)
@@ -103,10 +153,11 @@ def main():
 		p = OptionParser('Usage: %prog [options] command [ args ... ]')
 		p.disable_interspersed_args()
 		p.add_option('--no-remote',    '-n', action='store_true', help='disable automatic enabling / disabling of VIM plugin')
-		p.add_option('--remote',       '-r', action='append', default=[], help='target a specific VIM server')
+		p.add_option('--remote',       '-r', action='append', default=[], help='target a specific VIM server (with --neovim, this should be the server path)')
 		p.add_option('--clear',        '-c', action='store_true', help='insert a large gap between invocations')
 		p.add_option('--huppy',        '-s', action='store_true', help='use `huppy` to run / restart a long-running process (mnemonic: [s]erver) (http://gfxmonk.net/dist/0install/huppy.xml)')
 		p.add_option('--verbose',      '-v', action='store_true', help='verbose')
+		p.add_option('--neovim'            , action='store_true', help='attach to nvim instead of vim (requires nvim-remote)')
 		opts, args = p.parse_args()
 		assert len(args) > 0
 
@@ -117,6 +168,8 @@ def main():
 		logging.basicConfig(format=fmt, level=lvl)
 
 		assert len(args) > 0, "You must provide a command"
+
+		opts.ServerClass = NeovimServer if opts.neovim else VimServer
 
 		if opts.huppy:
 			def start_huppy():
@@ -150,7 +203,7 @@ def main():
 					logging.info('-- waiting --')
 
 
-		vimCall(opts, "WatchNotify")
+		vimCall(opts, "vimwatch#enable()")
 		enabled = True
 		run(trigger, initially_dirty=not opts.huppy, clear=opts.clear)
 	except AssertionError:
@@ -165,7 +218,7 @@ def main():
 	finally:
 		def cleanup_vim():
 			if enabled:
-				vimCall(opts, "WatchNotifyOff")
+				vimCall(opts, "vimwatch#disable()")
 		def cleanup_huppy():
 			if huppy.value:
 				os.kill(huppy.value.pid, signal.SIGTERM)
@@ -187,4 +240,5 @@ def main():
 		if failed:
 			sys.exit(1)
 
-main()
+if __name__ == '__main__':
+	main()
