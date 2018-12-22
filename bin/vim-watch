@@ -186,7 +186,7 @@ def main():
 			def trigger():
 				returncode = subprocess.Popen(args).wait()
 				if returncode != 0:
-					logging.warn("Command failed with status %d", returncode)
+					logging.warning("Command failed with status %d", returncode)
 				else:
 					logging.info('-- waiting --')
 
